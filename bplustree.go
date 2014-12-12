@@ -47,8 +47,9 @@ type treeNode struct {
 	dirty    bool
 	keys     []Key
 	leaf     bool
-	nextLeaf *treeNode
+	next     *treeNode
 	parent   *treeNode
+	previous *treeNode
 	values   []interface{}
 }
 
@@ -290,11 +291,15 @@ func (t *tree) splitNode(n *treeNode, key Key) (*treeNode, error) {
 		return n, nil
 	}
 
+	n.dirty = true
+
 	split := keyCount / 2
 	newNode := t.newTreeNode()
 	newNode.leaf = n.leaf
 	newNode.keys = n.keys[split:]
 	if newNode.leaf {
+		newNode.previous = n
+		n.next = newNode
 		newNode.values = n.values[split:]
 		n.values = n.values[:split]
 	} else {
