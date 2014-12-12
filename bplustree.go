@@ -16,6 +16,7 @@ type Tree interface {
 	NodeCount() uint64
 	Search(key Key) chan *TreeOpResult
 	Update(key Key, val interface{}) chan *TreeOpResult
+	Traverse() chan *TreeOpResult
 }
 
 type Key interface {
@@ -35,6 +36,7 @@ type operation func()
 type tree struct {
 	degree         int
 	dirty          bool
+	firstKey       Key
 	keyGenerator   KeyGenFn
 	nodeCount      uint64
 	operationQueue chan operation
@@ -81,7 +83,16 @@ func NewTree(degree int, queueLength uint16, keyGenerator KeyGenFn) Tree {
 	t.degree = degree
 	t.operationQueue = make(chan operation, queueLength)
 	t.stop = make(chan interface{})
-	t.keyGenerator = keyGenerator
+
+	// one time function to capture the first key and then
+	// revert to normal key generation
+	keyGenFunc := func(tree Tree, value interface{}) Key {
+		t.firstKey = keyGenerator(t, value)
+		t.keyGenerator = keyGenerator
+		return t.firstKey
+	}
+
+	t.keyGenerator = keyGenFunc
 	go t.start()
 
 	return t
@@ -131,6 +142,9 @@ func (t *tree) Search(key Key) chan *TreeOpResult {
 	}
 
 	return ch
+}
+
+func (t *tree) Traverse() chan *TreeOpResult {
 }
 
 func (t *tree) Stop() {
