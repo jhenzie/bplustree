@@ -4,7 +4,7 @@ import "testing"
 
 type kt uint64
 
-func uint64Key() KeyGenFn {
+func uint64Key() KeyGenerationFn {
 	var currentValue kt = 1000
 	return func(t Tree, val interface{}) Key {
 		currentValue += 1
@@ -13,57 +13,52 @@ func uint64Key() KeyGenFn {
 	}
 }
 
-func (k kt) Compare(other Key) int {
-	key2 := other.(kt)
+func keyCompare(lhs, rhs Key) int {
+	lhsi := lhs.(kt)
+	rhsi := rhs.(kt)
 
-	if k < key2 {
-		return LessThan
-	} else if k > key2 {
-		return GreaterThan
+	if lhsi < rhsi {
+		return OrderedAscending
+	} else if lhsi > rhsi {
+		return OrderedDescending
 	}
 
-	return Equal
+	return OrderedSame
+}
+
+func initTree() Tree {
+	return NewTree(2, uint64Key(), keyCompare)
+}
+
+func populateTree(t Tree) {
+	t.Insert("justin")
+	t.Insert("nicky")
+	t.Insert("caitlin")
+	t.Insert("abigail")
 }
 
 func TestInsert(test *testing.T) {
-	fn := uint64Key()
-	tree := NewTree(2, 10, fn)
+	tree := initTree()
 
-	if tree.NodeCount() != 1 {
-		test.Error("New tree should have 1 nodes, has", tree.NodeCount())
+	populateTree(tree)
+
+	if tree.NodeCount() != 5 {
+		test.Error("Tree should have 5 nodes, has ", tree.NodeCount())
 	}
+}
 
-	ch := tree.Insert("Justin")
+func TestSearch(test *testing.T) {
+	tree := initTree()
 
-	// wait for the result
-	tor := <-ch
+	populateTree(tree)
 
-	if tor.Err != nil {
-		test.Error("Insertion results in error", tor.Err)
+	if key, err := tree.Insert("jasper"); err != nil {
+		test.Error("Tree insert failed with error", err)
+	} else {
+		if name, err := tree.Search(key); err != nil {
+			test.Error("Search for key yielded error:", err)
+		} else if name != "jasper" {
+			test.Error("Retrieved value should have been jasper, was ", name)
+		}
 	}
-
-	test.Log("Insert generated key", tor.Key)
-
-	if tree.NodeCount() != uint64(1) {
-		test.Error("Expected 1 got", tree.NodeCount())
-	}
-
-	ch = tree.Insert("Nicky")
-
-	tor = <-ch
-
-	if tree.NodeCount() != uint64(1) {
-		test.Error("Expected 1 got", tree.NodeCount())
-	}
-
-	// This insert will exceed the count for this node, causing a split
-	// and the creation of a new root.
-	ch = tree.Insert("Caitlin")
-
-	tor = <-ch
-
-	if tree.NodeCount() != uint64(3) {
-		test.Error("Expected 3 got", tree.NodeCount())
-	}
-
 }

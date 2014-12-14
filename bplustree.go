@@ -3,45 +3,32 @@ package bplustree
 import (
 	"errors"
 	"log"
-	"time"
 )
 
 // B+Tree stores value at the leaf only, internal nodes only contain copies of the keys and pointers child nodes
 
 type Tree interface {
-	Stop()
-
-	Delete(key Key) chan *TreeOpResult
-	Insert(val interface{}) chan *TreeOpResult
+	Delete(key Key) error
+	Insert(val interface{}) (Key, error)
 	NodeCount() uint64
-	Search(key Key) chan *TreeOpResult
-	Update(key Key, val interface{}) chan *TreeOpResult
-	Traverse() chan *TreeOpResult
+	Search(key Key) (interface{}, error)
+	Update(key Key, val interface{}) error
 }
 
-type Key interface {
-	Compare(other Key) int
-}
+type Key interface{}
 
-type TreeOpResult struct {
-	Key   Key
-	Value interface{}
-	Err   error
-}
+type KeyCompareFn func(lhs, rhs Key) int
 
-type KeyGenFn func(t Tree, value interface{}) Key
-
-type operation func()
+type KeyGenerationFn func(t Tree, value interface{}) Key
 
 type tree struct {
-	degree         int
-	dirty          bool
-	firstKey       Key
-	keyGenerator   KeyGenFn
-	nodeCount      uint64
-	operationQueue chan operation
-	root           *treeNode
-	stop           chan interface{}
+	degree       uint16
+	dirty        bool
+	firstKey     Key
+	keyGenerator KeyGenerationFn
+	keyCompare   KeyCompareFn
+	nodeCount    uint64
+	root         *treeNode
 }
 
 type treeNode struct {
@@ -56,33 +43,27 @@ type treeNode struct {
 }
 
 const (
-	LessThan    = -1
-	Equal       = 0
-	GreaterThan = 1
+	OrderedAscending  = -1
+	OrderedSame       = 0
+	OrderedDescending = 1
 )
 
 var (
 	ErrInternalInconsistency = errors.New("Tree is internally inconsistent")
 	ErrNotFound              = errors.New("Provided key not found")
+	ErrNotImplemented        = errors.New("Not implemented, sorry")
 )
 
-func NewTree(degree int, queueLength uint16, keyGenerator KeyGenFn) Tree {
+func NewTree(degree uint16, keyGenerator KeyGenerationFn, keyCompare KeyCompareFn) Tree {
+
 	if degree < 2 {
 		degree = 2
 	}
 
-	if queueLength < 1 {
-		queueLength = 1
-	}
-
 	t := new(tree)
-	t.root = t.newTreeNode()
-	t.root.leaf = true
-	t.root.dirty = true
-	t.dirty = true
+	t.root = t.newTreeNode(true)
 	t.degree = degree
-	t.operationQueue = make(chan operation, queueLength)
-	t.stop = make(chan interface{})
+	t.keyCompare = keyCompare
 
 	// one time function to capture the first key and then
 	// revert to normal key generation
@@ -93,7 +74,6 @@ func NewTree(degree int, queueLength uint16, keyGenerator KeyGenFn) Tree {
 	}
 
 	t.keyGenerator = keyGenFunc
-	go t.start()
 
 	return t
 }
@@ -104,57 +84,40 @@ func (t *tree) NodeCount() uint64 {
 	return t.nodeCount
 }
 
-func (t *tree) Insert(val interface{}) chan *TreeOpResult {
-	ch := make(chan *TreeOpResult)
+func (t *tree) Insert(val interface{}) (Key, error) {
+	key := t.keyGenerator(t, val)
+	node := t.nodeForKey(key)
+	err := t.recordValue(key, val, node)
 
-	t.operationQueue <- func() {
-		t.insert(val, ch)
+	return key, err
+}
+
+func (t *tree) Delete(key Key) error {
+	// TODO
+	return ErrNotImplemented
+}
+
+func (t *tree) Update(key Key, val interface{}) error {
+	return ErrNotImplemented
+}
+
+func (t *tree) Search(key Key) (interface{}, error) {
+	n := t.nodeForKey(key)
+
+	for idx, k := range n.keys {
+		if t.keyCompare(key, k) == OrderedSame {
+			return n.values[idx], nil
+		}
 	}
 
-	return ch
-}
-
-func (t *tree) Delete(key Key) chan *TreeOpResult {
-	ch := make(chan *TreeOpResult)
-
-	t.operationQueue <- func() {
-		t.delete(key, ch)
-	}
-
-	return ch
-}
-
-func (t *tree) Update(key Key, val interface{}) chan *TreeOpResult {
-	ch := make(chan *TreeOpResult)
-
-	t.operationQueue <- func() {
-		t.update(key, val, ch)
-	}
-
-	return ch
-}
-
-func (t *tree) Search(key Key) chan *TreeOpResult {
-	ch := make(chan *TreeOpResult)
-
-	t.operationQueue <- func() {
-		t.search(key, ch)
-	}
-
-	return ch
-}
-
-func (t *tree) Traverse() chan *TreeOpResult {
-}
-
-func (t *tree) Stop() {
-	t.stop <- true
+	return nil, ErrNotFound
 }
 
 // Internal funcs
 
-func (t *tree) newTreeNode() *treeNode {
+func (t *tree) newTreeNode(isLeaf bool) *treeNode {
 	nnode := new(treeNode)
+	nnode.leaf = isLeaf
 	nnode.dirty = true
 	nnode.children = make([]*treeNode, 0, t.degree+1)
 	nnode.keys = make([]Key, 0, t.degree)
@@ -162,87 +125,7 @@ func (t *tree) newTreeNode() *treeNode {
 	t.dirty = true
 	t.nodeCount += 1
 
-	log.Printf("Node count is now %v", t.nodeCount)
-
 	return nnode
-}
-
-func (t *tree) start() {
-	inactivityTimer := time.Tick(time.Second * 3)
-	listening := true
-
-	for listening {
-		select {
-		case <-t.stop:
-			listening = false
-		case op := <-t.operationQueue:
-			op()
-		case <-inactivityTimer:
-			t.houseKeeping()
-		}
-	}
-
-	t.houseKeeping()
-}
-
-func (t *tree) insert(value interface{}, channel chan *TreeOpResult) {
-	key := t.keyGenerator(t, value)
-	node := t.nodeForKey(key)
-
-	err := t.recordValue(key, value, node)
-
-	tor := new(TreeOpResult)
-
-	tor.Value = value
-	tor.Key = key
-	tor.Err = err
-
-	channel <- tor
-}
-
-func (t *tree) update(key Key, val interface{}, channel chan *TreeOpResult) {
-}
-
-func (t *tree) search(key Key, channel chan *TreeOpResult) {
-	tor := new(TreeOpResult)
-	node := t.nodeForKey(key)
-
-	if node != nil {
-		for idx, nkey := range node.keys {
-			if key.Compare(nkey) == Equal {
-				tor.Value = node.values[idx]
-				tor.Key = key
-
-				channel <- tor
-				return
-			}
-		}
-	}
-
-	tor.Err = ErrNotFound
-	channel <- tor
-}
-
-func (t *tree) delete(key Key, channel chan *TreeOpResult) {
-	tor := new(TreeOpResult)
-	node := t.nodeForKey(key)
-
-	if node != nil {
-		for idx, nkey := range node.keys {
-			if key.Compare(nkey) == Equal {
-				tor.Value = node.values[idx]
-				tor.Key = key
-
-				// Deletion here
-
-				channel <- tor
-				return
-			}
-		}
-	}
-
-	tor.Err = ErrNotFound
-	channel <- tor
 }
 
 func (t *tree) recordValue(key Key, value interface{}, n *treeNode) error {
@@ -255,7 +138,7 @@ func (t *tree) recordValue(key Key, value interface{}, n *treeNode) error {
 	place := -1
 
 	for idx, nkey := range n.keys {
-		if key.Compare(nkey) == LessThan {
+		if t.keyCompare(key, nkey) == OrderedAscending {
 			place = idx
 			break
 		}
@@ -301,15 +184,14 @@ func (t *tree) recordValue(key Key, value interface{}, n *treeNode) error {
 func (t *tree) splitNode(n *treeNode, key Key) (*treeNode, error) {
 	keyCount := len(n.keys)
 
-	if keyCount < t.degree {
+	if uint16(keyCount) < t.degree {
 		return n, nil
 	}
 
 	n.dirty = true
 
 	split := keyCount / 2
-	newNode := t.newTreeNode()
-	newNode.leaf = n.leaf
+	newNode := t.newTreeNode(true)
 	newNode.keys = n.keys[split:]
 	if newNode.leaf {
 		newNode.previous = n
@@ -322,7 +204,7 @@ func (t *tree) splitNode(n *treeNode, key Key) (*treeNode, error) {
 	}
 
 	if n.parent == nil {
-		root := t.newTreeNode()
+		root := t.newTreeNode(false)
 		root.leaf = false
 		t.root = root
 
@@ -335,7 +217,7 @@ func (t *tree) splitNode(n *treeNode, key Key) (*treeNode, error) {
 		}
 	}
 
-	if key.Compare(newNode.keys[0]) == LessThan {
+	if t.keyCompare(key, newNode.keys[0]) == OrderedAscending {
 		return n, nil
 	} else {
 		return newNode, nil
@@ -351,14 +233,14 @@ func (t *tree) nodeForKey(k Key) *treeNode {
 		}
 
 		for idx, key := range candidateNode.keys {
-			switch k.Compare(key) {
-			case Equal:
+			switch t.keyCompare(k, key) {
+			case OrderedSame:
 				candidateNode = candidateNode.children[idx+1]
 				break
-			case LessThan:
+			case OrderedAscending:
 				candidateNode = candidateNode.children[idx]
 				break
-			case GreaterThan:
+			case OrderedDescending:
 				candidateNode = candidateNode.children[idx+1]
 				continue
 			}
