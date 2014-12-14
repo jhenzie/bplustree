@@ -119,9 +119,9 @@ func (t *tree) newTreeNode(isLeaf bool) *treeNode {
 	nnode := new(treeNode)
 	nnode.leaf = isLeaf
 	nnode.dirty = true
-	nnode.children = make([]*treeNode, 0, t.degree+1)
-	nnode.keys = make([]Key, 0, t.degree)
-	nnode.values = make([]interface{}, 0, t.degree)
+	nnode.children = make([]*treeNode, 0)
+	nnode.keys = make([]Key, 0)
+	nnode.values = make([]interface{}, 0)
 	t.dirty = true
 	t.nodeCount += 1
 
@@ -158,19 +158,17 @@ func (t *tree) recordValue(key Key, value interface{}, n *treeNode) error {
 			}
 		}
 	} else {
-		keyCount := len(n.keys)
-		n.keys = n.keys[0 : keyCount+1]
+		n.keys = append(n.keys, 0)
 		copy(n.keys[place+1:], n.keys[place:])
 		n.keys[place] = key
 		if n.leaf {
-			n.values = n.values[0 : keyCount+1]
+			n.values = append(n.values, 0)
 			copy(n.values[place+1:], n.values[place:])
 			n.values[place] = value
 			return nil
 		} else {
 			if tn, ok := value.(*treeNode); ok {
-				childCount := len(n.children)
-				n.children = n.children[0 : childCount+1]
+				n.children = append(n.children, nil)
 				copy(n.children[place+1:], n.children[place:])
 				n.children[place] = tn
 				return nil

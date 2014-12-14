@@ -62,3 +62,32 @@ func TestSearch(test *testing.T) {
 		}
 	}
 }
+
+func TestStringKey(test *testing.T) {
+	key := func(t Tree, v interface{}) Key {
+		return v
+	}
+
+	keyCompare := func(lhs, rhs Key) int {
+		lhss := lhs.(string)
+		rhss := rhs.(string)
+
+		if lhss < rhss {
+			return OrderedAscending
+		} else if lhss > rhss {
+			return OrderedDescending
+		}
+
+		return OrderedSame
+	}
+
+	t := NewTree(4, key, keyCompare)
+
+	populateTree(t)
+
+	name, _ := t.Search("justin")
+
+	if name != "justin" {
+		test.Error("key justin returned ", name)
+	}
+}
