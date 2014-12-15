@@ -12,7 +12,7 @@ func populateTree(t BTree, test *testing.T) {
 	}
 }
 
-func initTree(test *testing.T) BTree {
+func initTree(test *testing.T, degree uint16) BTree {
 	var seed uint64 = 100
 
 	key := func(t BTree, v interface{}) (BTreeKey, error) {
@@ -33,13 +33,13 @@ func initTree(test *testing.T) BTree {
 		return OrderedSame
 	}
 
-	t := NewBTree(4, key, keyCompare)
+	t := NewBTree(degree, key, keyCompare)
 
 	return t
 }
 
 func TestInsert(test *testing.T) {
-	t := initTree(test)
+	t := initTree(test, 4)
 
 	populateTree(t, test)
 
@@ -55,7 +55,7 @@ func TestInsert(test *testing.T) {
 }
 
 func TestSearch(test *testing.T) {
-	t := initTree(test)
+	t := initTree(test, 4)
 	testValue := "TestSearchValue"
 	if key, err := t.Insert(testValue); err != nil {
 		test.Error("Insert failed with error:", err)
@@ -70,4 +70,26 @@ func TestSearch(test *testing.T) {
 		}
 	}
 
+}
+
+func TestBinarySearch(test *testing.T) {
+	tree := initTree(test, 20)
+	var key BTreeKey
+	expectedValue := -1
+	for i := 0; i < 50; i++ {
+		if i%25 == 0 {
+			expectedValue = i
+			key, _ = tree.Insert(i)
+		} else {
+			tree.Insert(i)
+		}
+	}
+
+	if value, err := tree.Search(key); err != nil {
+		test.Error("Search failed with error:", err)
+	} else {
+		if value != expectedValue {
+			test.Error("Should have been ", expectedValue, ", was ", value)
+		}
+	}
 }

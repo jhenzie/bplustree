@@ -194,7 +194,49 @@ func (t *tree) search(key BTreeKey, channel chan *bTreeTriple) {
 	channel <- triple
 }
 
+func (t *tree) findNodeForKeyBinarySearch(key BTreeKey) *treeNode {
+	n := t.root
+
+	for n.leaf == false {
+		low := 0
+		high := len(n.keys)
+
+		var candidateNode *treeNode
+
+		for low < high {
+			pivot := low + ((high - low) / 2)
+
+			if compare := t.keyCompare(key, n.keys[pivot]); compare == OrderedAscending {
+				// Record potential node
+				candidateNode = n.children[pivot]
+				// Them search the lower portion
+				high = pivot - 1
+				continue
+			} else if compare == OrderedDescending {
+				// Search teh upper portion
+				low = pivot + 1
+				continue
+			} else {
+				candidateNode = n.children[pivot+1]
+				break
+			}
+		}
+
+		if candidateNode == nil {
+			n = n.children[len(n.children)-1]
+		} else {
+			n = candidateNode
+		}
+	}
+
+	return n
+}
+
 func (t *tree) findNodeForKey(key BTreeKey) *treeNode {
+	if t.degree > 19 {
+		return t.findNodeForKeyBinarySearch(key)
+	}
+
 	n := t.root
 
 	for {
