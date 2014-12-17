@@ -181,17 +181,51 @@ func (t *tree) search(key BTreeKey, channel chan *bTreeTriple) {
 	triple := new(bTreeTriple)
 	node := t.findNodeForKey(key)
 
+	idx := -1
 	triple.err = ErrNotFound
 
-	for idx, k := range node.keys {
-		if t.keyCompare(key, k) == OrderedSame {
-			triple.value = node.values[idx]
-			triple.err = nil
-			break
-		}
+	if len(node.keys) > 20 {
+		idx = t.search_binary(key, node)
+	} else {
+		idx = t.search_linear(key, node)
+	}
+
+	if idx != -1 {
+		triple.value = node.values[idx]
+		triple.key = key
+		triple.err = nil
 	}
 
 	channel <- triple
+}
+
+func (t *tree) search_linear(key BTreeKey, node *treeNode) int {
+	for idx, k := range node.keys {
+		if t.keyCompare(key, k) == OrderedSame {
+			return idx
+		}
+	}
+
+	return -1
+}
+
+func (t *tree) search_binary(key BTreeKey, node *treeNode) int {
+	low := 0
+	high := len(node.keys)
+
+	for low < high {
+		pivot := low + (high-low)/2
+		switch t.keyCompare(key, node.keys[pivot]) {
+		case OrderedSame:
+			return pivot
+		case OrderedAscending:
+			high = pivot - 1
+		case OrderedDescending:
+			low = pivot + 1
+		}
+	}
+
+	return -1
 }
 
 func (t *tree) findNodeForKeyBinarySearch(key BTreeKey) *treeNode {
