@@ -228,69 +228,67 @@ func (t *tree) search_binary(key BTreeKey, node *treeNode) int {
 	return -1
 }
 
-func (t *tree) findNodeForKeyBinarySearch(key BTreeKey) *treeNode {
+func (t *tree) findNodeForKey(key BTreeKey) *treeNode {
 	n := t.root
-
 	for n.leaf == false {
-		low := 0
-		high := len(n.keys)
-
-		var candidateNode *treeNode
-
-		for low < high {
-			pivot := low + ((high - low) / 2)
-
-			if compare := t.keyCompare(key, n.keys[pivot]); compare == OrderedAscending {
-				// Record potential node
-				candidateNode = n.children[pivot]
-				// Them search the lower portion
-				high = pivot - 1
-				continue
-			} else if compare == OrderedDescending {
-				// Search teh upper portion
-				low = pivot + 1
-				continue
-			} else {
-				candidateNode = n.children[pivot+1]
-				break
-			}
-		}
-
-		if candidateNode == nil {
-			n = n.children[len(n.children)-1]
+		l := len(n.keys)
+		if l > 20 {
+			n = t.findNodeForKeyBinarySearch(n, key)
 		} else {
-			n = candidateNode
+			n = t.findNodeForKeyLinearSearch(n, key)
 		}
 	}
 
 	return n
 }
 
-func (t *tree) findNodeForKey(key BTreeKey) *treeNode {
-	if t.degree > 19 {
-		return t.findNodeForKeyBinarySearch(key)
+func (t *tree) findNodeForKeyBinarySearch(n *treeNode, key BTreeKey) *treeNode {
+	low := 0
+	high := len(n.keys)
+
+	var candidateNode *treeNode
+
+	for low < high {
+		pivot := low + (high-low)/2
+
+		if compare := t.keyCompare(key, n.keys[pivot]); compare == OrderedAscending {
+			// Record potential node
+			candidateNode = n.children[pivot]
+			// Them search the lower portion
+			high = pivot - 1
+			continue
+		} else if compare == OrderedDescending {
+			// Search the upper portion
+			low = pivot + 1
+			continue
+		} else {
+			candidateNode = n.children[pivot+1]
+			break
+		}
 	}
 
-	n := t.root
-
-	for {
-		if n.leaf {
-			return n
-		}
-
-		var candidateNode *treeNode
-
-		for idx, k := range n.keys {
-			if t.keyCompare(key, k) == OrderedAscending {
-				candidateNode = n.children[idx]
-				break
-			}
-
-			candidateNode = n.children[idx+1]
-		}
-
+	if candidateNode == nil {
+		n = n.children[len(n.children)-1]
+	} else {
 		n = candidateNode
 	}
+
+	return n
+}
+
+func (t *tree) findNodeForKeyLinearSearch(n *treeNode, key BTreeKey) *treeNode {
+	var candidateNode *treeNode
+
+	for idx, k := range n.keys {
+		if t.keyCompare(key, k) == OrderedAscending {
+			candidateNode = n.children[idx]
+			break
+		}
+
+		candidateNode = n.children[idx+1]
+	}
+
+	return candidateNode
 }
 
 func (t *tree) recordValue(key BTreeKey, value interface{}, n *treeNode) {
